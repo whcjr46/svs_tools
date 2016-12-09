@@ -48,7 +48,7 @@ def updateLoggedKeys(args,props,loggedKeys):
     
 #Process a single svs file.
 def scanSvsFile(args, loggedKeys, ignoredKeys):
-    if args.verbosity>=3 :
+    if args.verbosity>3 :
         print("Processing file: ", join(args.dir,args.file), file=sys.stderr)
 
     slide=openslide.OpenSlide(args.file)
@@ -68,7 +68,7 @@ def scanSvsFile(args, loggedKeys, ignoredKeys):
 if __name__ == '__main__':  
     parser = argparse.ArgumentParser(description="Build svs image metadata table")
     parser.add_argument ( "-v", "--verbosity", action="count",default=0,help="increase output verbosity" )
-    parser.add_argument ( "-d", "--dir", type=str, help="path to directory containing DICOM files", 
+    parser.add_argument ( "-d", "--dir", type=str, help="path to directory containing svs files", 
                           default='/users/bcliffor/svs/images1/TCGA')
     parser.add_argument ( "-f", "--file", type=str, help="file to process, assumed to be in .", 
                           default='t1.svs')
