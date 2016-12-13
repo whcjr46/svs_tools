@@ -1,10 +1,7 @@
  # -*- coding: utf-8 -*-
 """
-Walk a directory tree starting at the --dir paramenter. Build a TSV table 
-of tag values in each svs file. Specific tags to collect 
-are listed in tags file.
-
-Output result to standard out.
+Merge separate json encoded  metadata files. Each file is a list of dictionaries. Each dictionary is keyed by svs tags.
+Output result as a tsv file to standard out.
 """
 from __future__ import print_function
 import os,sys
@@ -24,21 +21,19 @@ def loadLoggedKeys(file):
 
 def outputFieldNames(keys):
     print("{}".format(keys[0]),end="")
-    for key in keys[0:]:
+    for key in keys[1:]:
         print("\t{}".format(key),end="")
-    print("\n")
+    print("")
           
 def outputFileResults(tagValueList, mergedKeys):
     for tagValueDict in tagValueList:
         print('{}'.format(tagValueDict['RootDir']),end="")
-        for key in mergedKeys[0:]:
-#            if key=='RootDir':
-#                print('{}'.format(tagValueDict[key]),end="")  
+        for key in mergedKeys[1:]:
             if key in tagValueDict:
                 print('\t{}'.format(tagValueDict[key]),end="")
             else:
                 print('\t{}'.format(''),end="")
-        print("\n")
+        print("")
           
 def outputAllResults(args,mergedKeys):
     outputFieldNames(mergedKeys)
@@ -66,6 +61,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     keys=loadLoggedKeys(args.merged+'/'+args.keys)
+    print("{}".format(keys),file=sys.stderr)
     outputAllResults(args,keys)
     
 
