@@ -68,9 +68,9 @@ def scanCaType(args,dir):
                     rootDir=sysFile.rpartition('/')[0]
                     if args.verbosity>1:
                         print("{}".format(svsFile),file=f)
-#                    subprocess.call(['gsutil','cp',svsFile,'.'])
-#                    scanResults.append(scanSVSFile(args,loggedKeys,ignoredKeys,rootDir,svsFile))
-#                    subprocess.call(['rm',svsFile])
+                    subprocess.call(['gsutil','cp',svsFile,'.'])
+                    scanResults.append(scanSVSFile(args,loggedKeys,ignoredKeys,rootDir,svsFile))
+                    subprocess.call(['rm',svsFile])
     except IOError:
         print("Can't open progress file {} for write".format(args.progress+'/'+args.type),file=sys.stderr)
         exit()
