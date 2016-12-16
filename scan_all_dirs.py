@@ -58,7 +58,7 @@ def scanCaType(args,dir):
     if args.percent != '100':
         #Sample a random subset of files
         random.shuffle(svsFiles)
-        fileCount = max(float(args.percent)*len(svsFiles)/100,1)
+        fileCount = max(float(args.fraction)*len(svsFiles)/100,1)
         svsFiles = svsFiles[0:fileCount]
 
     try:
@@ -92,14 +92,14 @@ def scanCaType(args,dir):
         print("Can't open loggedKeys file {} for write".format(args.keys+'/'+args.type),file=sys.stderr)
         exit()
 
-def scanAllCaType(args):
-    dirs=subprocess.check_output(['gsutil','ls','gs://isb-cgc-open/NCI-GDC/legacy/*']).split('\n')
+def scanAllCaTypes(args):
+    dirs=subprocess.check_output(['gsutil','ls','gs://isb-cgc-open/NCI-GDC/legacy/TCGA']).split('\n')
     
     for dir in dirs:
         if args.verbosity>0:
             print("Starting scan of {}".format(dir),file=sys.stderr)
         if dir!='':
-            scanType(args,dir)
+            scanCaType(args,dir)
 
 
     
@@ -116,7 +116,7 @@ if __name__ == '__main__':
                           default='./errors')
     parser.add_argument ( "-i", "--ignore", type=str, help="path to file containing ignored keys", 
                           default='./ignoredKeys.txt')
-    parser.add_argument ( "-p", "--percent", type=str, help="Fraction of files to scan", 
+    parser.add_argument ( "-f", "--fraction", type=str, help="Fraction of files to scan as percent", 
                           default='1')
     args = parser.parse_args()
     
