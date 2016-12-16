@@ -19,7 +19,7 @@ def loadIgnoredKeys(args):
     return ignoredKeys    
 
 #Need to incrementally add keys to logged keys   
-def updateLoggedKeys(args,props,loggedKeys):
+def updateLoggedKeys(args,props,loggedKeys,ignoredKeys):
     for key in props.keys():
         if key not in loggedKeys and key not in ignoredKeys:
             loggedKeys.append(key)
@@ -28,9 +28,10 @@ def updateLoggedKeys(args,props,loggedKeys):
 
 #Process a single svs file.
 def scanSvsFile(args,loggedKeys,ignoredKeys,rootDir,svsFile):
+    print("Opening {}".format(svsFile))
     slide=openslide.OpenSlide(svsFile)
     props=slide.properties
-    updateLoggedKeys(args,props,loggedKeys)
+    updateLoggedKeys(args,props,loggedKeys,ignoredKeys)
     keyValues={}
     for key in loggedKeys:
         if key =='RootDir':
@@ -55,41 +56,43 @@ def scanCaType(args,dir):
     caType = dir.rstrip('/').rpartition('/')[2]
     svsFiles = subprocess.check_output(['gsutil','ls',dir+'Other/*/*/*svs']).split('\n')
     
-    if args.percent != '100':
+    if args.fraction != '100':
         #Sample a random subset of files
         random.shuffle(svsFiles)
-        fileCount = max(float(args.fraction)*len(svsFiles)/100,1)
+        fileCount = int(max(float(args.fraction)*len(svsFiles)/100,1))
         svsFiles = svsFiles[0:fileCount]
 
     try:
         with open(args.progress+'/'+caType,'w') as f:
+            print("Scanning {} of {} file". format(fileCount, len(svsFiles)),file=f)
             for svsFile in svsFiles:
                 if svsFile!='':
-                    rootDir=sysFile.rpartition('/')[0]
+                    rootDir=svsFile.rpartition('/')[0]
                     if args.verbosity>1:
                         print("{}".format(svsFile),file=f)
+                        f.flush()
                     subprocess.call(['gsutil','cp',svsFile,'.'])
-                    scanResults.append(scanSVSFile(args,loggedKeys,ignoredKeys,rootDir,svsFile))
-                    subprocess.call(['rm',svsFile])
+                    scanResults.append(scanSvsFile(args,loggedKeys,ignoredKeys,rootDir,svsFile.rpartition('/')[2]))
+                    subprocess.call(['rm',svsFile.rpartition('/')[2]])
     except IOError:
-        print("Can't open progress file {} for write".format(args.progress+'/'+args.type),file=sys.stderr)
+        print("Can't open progress file {} for write".format(args.progress+'/'+caType),file=sys.stderr)
         exit()
 
     #Output results of scanning all files of caType
     try:
-        with open(args.results+'/'+caType) as f:
+        with open(args.results+'/'+caType,'w') as f:
             json.dump(scanResults,f)
     except IOError:
-        print("Can't open results  file {} for write".format(args.results+'/'+args.type),file=sys.stderr)
+        print("Can't open results file {} for write".format(args.results+'/'+caType),file=sys.stderr)
         exit()
 
     #Output the keys
     try:
-        with open(args.keys+'/'+caTtype,'w') as f:
+        with open(args.keys+'/'+caType,'w') as f:
             for key in loggedKeys:
                 f.write("%s\n"%key)
     except IOError:
-        print("Can't open loggedKeys file {} for write".format(args.keys+'/'+args.type),file=sys.stderr)
+        print("Can't open loggedKeys file {} for write".format(args.keys+'/'+caType),file=sys.stderr)
         exit()
 
 def scanAllCaTypes(args):
