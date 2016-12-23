@@ -14,6 +14,15 @@ import random
 from multiprocessing import Process,BoundedSemaphore
 from shutil import rmtree
 
+#Load previosly logged keys
+def loadLoggedKeys(args,caType):
+    try:
+        with open(args.keys+caType) as f:
+            loggedKeys = f.read().splitlines()
+    except IOError:
+        loggedKeys=['RootDir','SVSFileName']
+    return loggedKeys
+                    
 #Build a list of keys whose values are to be ignored
 def loadIgnoredKeys(args):
     with open(args.ignore) as f:
@@ -28,9 +37,16 @@ def updateLoggedKeys(args,props,loggedKeys,ignoredKeys):
 #            if args.verbosity>=2:
 #                print("Adding tag {}".format(key),file=sys.stderr)
 
+def loadScannedResults(args,caType):
+    if os.path.exists(args.results+caType):
+        with open(args.results+caType) as f:
+            return json.load(f)
+    else:
+        return []
+
 #Process a single svs file.
 def scanSvsFile(args,loggedKeys,ignoredKeys,rootDir,svsFile):
-    print("{}/{}".format(rootDir,svsFile),file=sys.stdout)
+    print("{}:{}/{}".format(time.ctime(),rootDir,svsFile),file=sys.stdout)
     sys.stdout.flush()
     try:
         slide=openslide.OpenSlide(args.scratch+svsFile)
@@ -51,56 +67,9 @@ def scanSvsFile(args,loggedKeys,ignoredKeys,rootDir,svsFile):
         print("Openslide could not open {}{}".format(rootDir,svsFile),file=sys.stderr)
         sys.stderr.flush()
         return (0,0)
-    
-def scanCaType(args,dir,sema):
-    if args.verbosity>0:
-        print("Starting scan of {}".format(dir),file=sys.stdout)
-        sys.stdout.flush()
-    loggedKeys=['RootDir','SVSFileName']
-    scanResults=[]
-    ignoredKeys = loadIgnoredKeys(args)
 
-    caType = dir.rstrip('/').rpartition('/')[2]
-    svsFiles = subprocess.check_output(['gsutil','ls',dir+'Other/*/*/*svs']).split('\n')
-
-    allFiles = len(svsFiles)
-    if args.fraction != '100':
-        #Sample a random subset of files
-        random.shuffle(svsFiles)
-        fileCount = int(max(float(args.fraction)*allFiles/100,1))
-        svsFiles = svsFiles[0:fileCount]
-    else:
-        fileCount=allFiles
-
-    try:
-        with open(args.progress+caType,'w') as f:
-            print("Scanning {} of {} file". format(fileCount, allFiles),file=f)
-            f.flush()
-            for svsFile in svsFiles:
-                if svsFile!='':
-                    rootDir=svsFile.rpartition('/')[0]
-                    if args.verbosity>1:
-                        print("{}".format(svsFile),file=f)
-                        f.flush()
-                    for attempt in range(3):
-                        #Copy the file from GS
-                        if subprocess.call(['gsutil','-q','cp',svsFile,args.scratch]) == 0:
-                            scanResult=scanSvsFile(args,loggedKeys,ignoredKeys,rootDir,svsFile.rpartition('/')[2])
-                            subprocess.call(['rm',args.scratch+svsFile.rpartition('/')[2]])
-                            if scanResult[0]:
-                                scanResults.append(scanResult[1])
-                                break                              
-                        else:
-                            print("Error copying {}".format(svsFile),file=sys.stderr)
-                            sys.stderr.flush()
-                    else:
-                        print("Failed to scan {}".format(svsFile),file=sys.stderr)
-                        sys.stderr.flush()
-    except IOError:
-        print("Can't open progress file {} for write".format(args.progress+caType),file=sys.stderr)
-        exit()
-
-    #Output results of scanning all files of caType
+def flushResults(args,caType,scanResults,loggedKeys):
+    #Output results of scanning files of caType
     try:
         with open(args.results+caType,'w') as f:
             json.dump(scanResults,f)
@@ -116,6 +85,72 @@ def scanCaType(args,dir,sema):
     except IOError:
         print("Can't open loggedKeys file {} for write".format(args.keys+caType),file=sys.stderr)
         exit()
+
+def scanned(rootDir, scanResults):
+    for scanResult in scanResults:
+        if rootDir==scanResult['RootDir']:
+            if args.verbosity>=2:
+                print("Skipping {}".format(rootDir),file=sys.stdout)
+                sys.stdout.flush()
+            return True
+    return False
+    
+def scanCaType(args,dir,sema):
+    if args.verbosity>0:
+        print("Starting scan of {}".format(dir),file=sys.stdout)
+        sys.stdout.flush()
+    scannedCount=0
+    caType = dir.rstrip('/').rpartition('/')[2]
+    
+    ignoredKeys=loadIgnoredKeys(args)
+    loggedKeys=loadLoggedKeys(args,caType)
+    scanResults=loadScannedResults(args,caType)
+
+    
+    svsFiles = subprocess.check_output(['gsutil','ls',dir+'Other/*/*/*svs']).split('\n')
+
+    numFiles = len(svsFiles)
+    if args.fraction != '100':
+        #Sample a random subset of files
+        random.shuffle(svsFiles)
+        fileCount = int(max(float(args.fraction)*numFiles/100,1))
+        svsFiles = svsFiles[0:fileCount]
+    else:
+        fileCount=numFiles
+
+    with open(args.progress+caType,'a') as f:
+        if f.tell()==0:
+            print("Scanning {} of {} file". format(fileCount,numFiles),file=f)
+            f.flush()
+        for svsFile in svsFiles:
+            if svsFile!='':
+                rootDir=svsFile.rpartition('/')[0]
+                if not scanned(rootDir,scanResults):
+                    for attempt in range(3):
+                        #Copy the file from GS
+                        if subprocess.call(['gsutil','-q','cp',svsFile,args.scratch]) == 0:
+                            scanResult=scanSvsFile(args,loggedKeys,ignoredKeys,rootDir,svsFile.rpartition('/')[2])
+                            subprocess.call(['rm',args.scratch+svsFile.rpartition('/')[2]])
+                            if scanResult[0]:
+                                scanResults.append(scanResult[1])
+                                if args.verbosity>1:
+                                    print("{}".format(svsFile),file=f)
+                                    f.flush()
+                                scannedCount+=1
+                                if scannedCount%int(args.flush)==0:
+                                    print("{} flushed".format(caType),file=sys.stdout)
+                                    sys.stdout.flush()
+                                    flushResults(args,caType,scanResults,loggedKeys)
+                                break                              
+                        else:
+                            print("Error copying {}".format(svsFile),file=sys.stderr)
+                            sys.stderr.flush()
+                    else:
+                        print("Failed to scan {}".format(svsFile),file=sys.stderr)
+                        sys.stderr.flush()
+
+    flushResults(args,caType,scanResults,loggedKeys)
+
 
     if args.verbosity>0:
         print("Completed scan of {}".format(dir),file=sys.stdout)
@@ -155,17 +190,30 @@ if __name__ == '__main__':
     parser.add_argument ( "-i", "--ignore", type=str, help="file containing ignored keys", 
                           default='./ignoredKeys.txt')
     parser.add_argument ( "-c", "--procs", type=str, help="Number of concurrent processes to run", 
-                          default='4')
+                          default='8')
     parser.add_argument ( "-f", "--fraction", type=str, help="Fraction of files to scan as percent", 
-                          default='1')
+                          default='100')
+    parser.add_argument ( "-l", "--flush", type=str, help="Count of files to scan between flushes", 
+                          default='25')
+    parser.add_argument ( "-n", "--klean", type=str, help="Y to remove all files", 
+                          default='N')
     args = parser.parse_args()
     
     #Empty the various target directories
-    for dir in (args.results, args.keys, args.progress, args.error, args.scratch):
+#    for dir in (args.results, args.keys, args.progress, args.error, args.scratch):
+    for dir in (args.scratch,):
         if os.path.exists(dir):
             rmtree(dir)
-        os.mkdir(dir)
 
+    if args.klean=='Y':
+        for dir in (args.results, args.keys, args.progress, args.error, args.scratch):
+            if os.path.exists(dir):
+                rmtree(dir)
+            
+    for dir in (args.results, args.keys, args.progress, args.error, args.scratch):
+        if not os.path.exists(dir):
+            os.mkdir(dir)
+        
     t0 = time.time()
     scanAllCaTypes(args)
     t1 = time.time()
@@ -174,4 +222,4 @@ if __name__ == '__main__':
         print("{} seconds".format(t1-t0),file=sys.stdout)
 
 
-            
+        
